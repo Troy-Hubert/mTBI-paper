@@ -1,0 +1,336 @@
+---
+title: "Forrest_plot_mTBI"
+output: html_document
+date: "2023-05-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if(!require(tidyverse)) {install.packages("tidyverse")}
+library(tidyverse)
+if(!require(gt)) {install.packages("gt")}
+library(gt)
+if(!require(readxl)) {install.packages("readxl")}
+library(readxl)
+if(!require(patchwork)) {install.packages("patchwork")}
+library(patchwork)
+```
+
+## Import data for figure
+```{r}
+
+### Make sure your table is updated first. All you need to do is choose the file
+
+# If you do not know the file destination for the CSV then use this function to select the file destination. Once the file is read in, you should be able to just run the whole thing. 
+# df <- file.choose()
+# FP_TBI <- df
+
+FP_TBI <- read_excel("~/Desktop/Coding/data/Forrest_plot_mTBI2.xlsx")
+FP_TBI
+```
+
+# Prepare data frame for figures
+
+I am creating an order variable for `ggplot()` so `IADL` stays up next to `ADL` and we can specify physical, cognitive, and mental disorders.
+```{r}
+PHC <- FP_TBI[1:20,]
+MS <- PHC[18,]
+PHC <- PHC[-18,]
+CHC <- FP_TBI[21:23,]
+MHC <- FP_TBI[24:30,]
+
+#Reaorder them descending by OR
+PHC <- PHC |>
+  arrange(desc(OR))
+
+#FP_2
+PHC <- rbind(
+  PHC[1:10,],
+  MS,
+  PHC[11:19,]
+)
+
+
+CHC <- CHC |>
+  arrange(desc(OR))
+MHC <- MHC |>
+  arrange(desc(OR))
+
+fp_df <- rbind(PHC,CHC,MHC)
+
+#specify the order of variables by OR by category
+fp_df$order <- seq(from=2,to=31,by=1)
+fp_df
+```
+
+# Prepare for `ggtext()`
+
+```{r}
+fp_Text <- fp_df |>
+    # add a row of data that are actually column names which will be shown on the plot in the next step
+  mutate(p.value = case_when(
+    p.value < .001 ~ "<0.001",
+    round(p.value, 2) == .05 ~ as.character(round(p.value,3)),
+    p.value < .01 ~ str_pad( # if less than .01, go one more decimal place
+      as.character(round(p.value, 3)),
+      width = 4,
+      pad = "0",
+      side = "right"
+    ),
+    TRUE ~ str_pad( # otherwise just round to 2 decimal places and pad string so that .2 reads as 0.20
+      as.character(round(p.value, 2)),
+      width = 4,
+      pad = "0",
+      side = "right"
+    )
+  ),
+      OR = as.character(round(OR,2)),
+      Lower = as.character(round(Lower,2)),
+      Upper = as.character(round(Upper,2)),
+      p.value = as.character(p.value)
+    ) |>
+    bind_rows(
+    data.frame(
+      Variables = "Condition",
+      CI = "OR (95% CI)",
+      Lower = "",
+      Upper = "",
+      p.value = "p-value"
+    )
+  ) |>
+  mutate(
+    CI = ifelse(!is.na(OR),paste0(OR," [", Lower, "-", Upper, "]"),NA),
+    model = fct_rev(fct_relevel(Variables, "Condition")))
+
+# MHC_Text <- MHC |>
+#   mutate(p.value = case_when(
+#     p.value < .001 ~ "<0.001",
+#     round(p.value, 2) == .05 ~ as.character(round(p.value,3)),
+#     p.value < .01 ~ str_pad( # if less than .01, go one more decimal place
+#       as.character(round(p.value, 3)),
+#       width = 4,
+#       pad = "0",
+#       side = "right"
+#     ),
+#     TRUE ~ str_pad( # otherwise just round to 2 decimal places and pad string so that .2 reads as 0.20
+#       as.character(round(p.value, 2)),
+#       width = 4,
+#       pad = "0",
+#       side = "right"
+#     )
+#   )) |>
+#   # add a row of data that are actually column names which will be shown on the plot in the next step
+#       mutate(
+#       OR = as.character(round(OR,2)),
+#       Lower = as.character(round(Lower,2)),
+#       Upper = as.character(round(Upper,2)),
+#       p.value = as.character(p.value,2)
+#     ) |>
+#   bind_rows(
+#     data.frame(
+#       Variables = "Condition",
+#       CI = "OR [95% CI]",
+#       Lower = "",
+#       Upper = "",
+#       p.value = "p-value"
+#     )
+#   ) |>
+#   mutate(
+#     CI = ifelse(!is.na(OR),paste0(OR," [", Lower, "-", Upper, "]"),NA),
+#     model = fct_rev(fct_relevel(Variables, "Condition")))
+
+# For Physical health condition plots
+# add the top row
+    # MHC_Text<-mutate(MHC_Text, top_row = 0)
+    # MHC_Text[12,5] = 1
+    # MHC_Text <- arrange(MHC_Text,order)
+    # MHC_Text[1,12] = 1
+    # MHC_Text[1,10] = "OR [95% CI]"
+
+# add the top row
+    fp_Text<-mutate(fp_Text, top_row = 0)
+    fp_Text[31,5] = 1
+    fp_Text <- arrange(fp_Text,order)
+    fp_Text[1,12] = 1
+    fp_Text[1,10] = "OR [95% CI]"
+
+fp_Text
+```
+
+# Text: Conditions and ORs
+```{r}
+# plot the left side of the plot 
+
+fp_left<- fp_Text %>% 
+      ggplot(aes(y = reorder(model, -order))) +
+      geom_text(aes(x = 0, label = Variables, hjust = 0, fontface = ifelse(fp_Text$Variables == "Condition","bold","plain"))) +
+      geom_text(
+      aes(x = 1.75, label = CI),
+      hjust = 0,
+      fontface = ifelse(fp_Text$CI == "OR [95% CI]", "bold","plain")) +
+      theme_void() +
+      coord_cartesian(ylim = c(1,32), xlim = c(0, 6))
+
+fp_left
+```
+
+
+```{r}
+# PHC_left<- PHC_Text %>% 
+#       ggplot(aes(y = reorder(model, -order))) +
+#       geom_text(aes(x = 0, label = Variables, hjust = 0, fontface = ifelse(PHC_Text$Variables == "Condition","bold","plain"))) +
+#       geom_text(
+#       aes(x = 1.5, label = CI),
+#       hjust = 0,
+#       fontface = ifelse(PHC_Text$CI == "OR (95% CI)", "bold","plain")) +
+#       theme_void() +
+#       coord_cartesian(ylim = c(1,21), xlim = c(0, 6))
+#     
+#     
+# MHC_left<-MHC_Text %>% 
+#       ggplot(aes(y = reorder(model, -order))) +
+#       geom_text(aes(x = 0, label = Variables), hjust = 0, fontface = ifelse(MHC_Text$Variables == "Condition","bold","plain")) +
+#       geom_text(
+#       aes(x = 2, label = CI),
+#       hjust = 0,
+#       fontface = ifelse(MHC_Text$CI == "OR (95% CI)", "bold","plain")) +
+#       theme_void() +
+#       coord_cartesian(ylim = c(1,11), xlim = c(0, 6))
+
+# PHC_left
+# MHC_left
+```
+
+# Middle: The plot
+
+First create the plot for physical health conditions
+```{r}
+fp_mid <- fp_df |>
+  ggplot(aes(y = reorder(Variables, -order))) + #,color = as.factor(sig))) +
+  #take away background
+  theme_classic() +
+  #make the forrest plot
+  geom_point(aes(x=OR), shape=16, size=2.5,show.legend = FALSE) +
+  geom_linerange(aes(xmin=Lower, xmax=Upper),size = .2, show.legend = FALSE) +
+  geom_errorbar(aes(xmin=Lower, xmax=Upper),width =.5,show.legend = FALSE)+
+  #scale_color_manual(values = c("#A6A6A6","black"))+
+  #change x axis name
+  labs(
+    x="Odds Ratio",
+    # title = "Odds of Reporting Medical Conditions",
+    # subtitle = "Based Upon Probable TBI/concussion") +
+       ) +
+  #adjust the dimentions. 
+  coord_cartesian(ylim = c(1,32), xlim=c(0, 6)) +
+  #add a line at 0 for reference 
+  geom_vline(xintercept = 1,linetype="dashed",alpha = .75) +
+  #add anotations to help suggests what each side means.
+  #Git rid of the Y - Axis
+    theme(axis.line.y = element_blank(),
+        axis.ticks.y= element_blank(),
+        axis.text.y= element_blank(),
+        axis.title.y= element_blank())
+
+fp_mid
+```
+
+
+Then for mental health conditions
+
+```{r}
+# MHC_mid <- MHC |>
+#   ggplot(aes(y = reorder(Variables, -order))) + #,color = as.factor(sig))) +
+#   #take away background
+#   theme_classic() +
+#   #make the forrest plot
+#   geom_point(aes(x=OR), shape=16, size=2.5,show.legend = FALSE) +
+#   geom_linerange(aes(xmin=Lower, xmax=Upper),size = .4, show.legend = FALSE) +
+#   geom_errorbar(aes(xmin=Lower, xmax=Upper),width =.3, show.legend = FALSE)+
+#   #scale_color_manual(values = c("#A6A6A6","black"))+
+#   #change x axis name
+#   labs(
+#     x="Odds Ratio",
+#     # title = "Odds of Reporting Mental Health Conditions",
+#     # subtitle = "Based Upon Probable TBI/concussion") +
+#        ) +
+#   #add a line at 1 for reference 
+#   geom_vline(xintercept = 1, linetype="dashed", alpha = .75) +
+#   #adjust the dimentions. 
+#   coord_cartesian(ylim = c(1,11), xlim=c(0, 6)) +
+#   #add anotations to help suggests what each side means.
+#   # annotate("text", x = .25, y = 10, label = "Less Likely", size= 3) +
+#   # annotate("text", x = 1.75, y = 10, label = "More Likely",size= 3) +
+#   #Git rid of the Y - Axis
+#     theme(axis.line.y = element_blank(),
+#         axis.ticks.y= element_blank(),
+#         axis.text.y= element_blank(),
+#         axis.title.y= element_blank())
+# 
+# MHC_mid
+```
+# Right: P values
+
+```{r}
+fp_right <- fp_Text |>
+      ggplot(aes(y = reorder(model, -order))) +
+        geom_text(aes(x = 0, label = p.value, hjust = 0,
+        fontface = ifelse(fp_Text$p.value == "p-value", "bold", "plain"))) +
+        theme_void() +
+        coord_cartesian(ylim = c(1,32))
+
+fp_right
+```
+
+
+```{r}
+# PHC_right <- PHC_Text |>
+#       ggplot(aes(y = reorder(model, -order))) +
+#         geom_text(aes(x = 0, label = p.value, hjust = 0,
+#         fontface = ifelse(PHC_Text$p.value == "p-value", "bold", "plain"))) +
+#         theme_void() +
+#         coord_cartesian(ylim = c(1,21))
+# 
+# MHC_right <- MHC_Text |>
+#       ggplot(aes(y = reorder(model, -order))) +
+#         geom_text(aes(x = 0, label = p.value, hjust = 0,
+#         fontface = ifelse(MHC_Text$p.value == "p-value", "bold", "plain"))) +
+#         theme_void() +
+#         coord_cartesian(ylim = c(1,11))
+# 
+# PHC_right
+# MHC_right
+                 
+
+here()       
+```
+
+
+# Patchwork
+
+Now we have to put the 3 pieces together
+
+```{r}
+layout <- c(
+  area(t = 0, l = 0, b = 30, r = 30),
+  area(t = 0, l = 17, b = 30, r = 25),
+  area(t = 0, l = 25, b = 30, r = 29) 
+)
+
+fp_left + fp_mid + fp_right + plot_layout(design = layout)
+```
+
+
+```{r}
+layout_P <- c(
+  area(t = 0, l = 0, b = 30, r = 40),
+  area(t = 0, l = 20, b = 30, r = 30),
+  area(t = 0, l = 29, b = 30, r = 35) 
+)
+
+PHC_left + PHC_mid + PHC_right + plot_layout(design = layout_P)
+```
+
+
+
+
+
