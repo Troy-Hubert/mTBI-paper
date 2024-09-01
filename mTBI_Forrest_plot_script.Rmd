@@ -299,9 +299,7 @@ fp_right
 # 
 # PHC_right
 # MHC_right
-                 
-
-here()       
+                
 ```
 
 
@@ -317,18 +315,7 @@ layout <- c(
 )
 
 fp_left + fp_mid + fp_right + plot_layout(design = layout)
-```
 
-
-```{r}
-layout_P <- c(
-  area(t = 0, l = 0, b = 30, r = 40),
-  area(t = 0, l = 20, b = 30, r = 30),
-  area(t = 0, l = 29, b = 30, r = 35) 
-)
-
-PHC_left + PHC_mid + PHC_right + plot_layout(design = layout_P)
-```
 
 
 
